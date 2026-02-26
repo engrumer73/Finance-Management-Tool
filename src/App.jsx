@@ -52,8 +52,9 @@ const DEFAULT_DATA = {
     {id:2,name:"Freelance",   amountRaw:200, currency:"USD",category:"💻 Freelance",type:"monthly",createdAt:_now-3600000},
   ],
   expenses:[
-    {id:1,name:"Kiraya (Rent)",amount:45000,category:"🏠 Housing",type:"monthly",createdAt:_now-7200000},
-    {id:2,name:"Groceries",    amount:25000,category:"🍔 Food",   type:"monthly",createdAt:_now-1800000},
+    {id:1,name:"Kiraya (Rent)",amount:45000,category:"🏠 Housing",type:"monthly",endDate:"",createdAt:_now-7200000},
+    {id:2,name:"Groceries",    amount:25000,category:"🍔 Food",   type:"monthly",endDate:"",createdAt:_now-1800000},
+    {id:3,name:"Car Installment",amount:15000,category:"🚗 Transport",type:"monthly",endDate:"2025-06-30",createdAt:_now-3600000},
   ],
   goals:[
     {id:1,name:"Emergency Fund",target:500000,saved:50000, emoji:"🛡️",color:"#00d4aa",priority:1,split:50,createdAt:_now-86400000*3},
@@ -220,7 +221,7 @@ export default function App() {
   const [newIncCatName,  setNewIncCatName]  = useState("");
   const [newIncCatEmoji, setNewIncCatEmoji] = useState("💵");
 
-  const [expForm,  setExpForm]  = useState({name:"",amount:"",category:DEFAULT_EXP_CATS[0],type:"monthly"});
+  const [expForm,  setExpForm]  = useState({name:"",amount:"",category:DEFAULT_EXP_CATS[0],type:"monthly",endDate:""});
   const [expEditId,setExpEditId]= useState(null);
   const [showExpCatModal,setShowExpCatModal]= useState(false);
   const [newExpCatName,  setNewExpCatName]  = useState("");
@@ -257,7 +258,11 @@ export default function App() {
 
   // ── Derived ──
   const totalIncomePKR  = useMemo(()=>incomes.reduce((s,i)=>s+(i.currency==="USD"?i.amountRaw*rate:i.amountRaw),0),[incomes,rate]);
-  const totalExpensePKR = useMemo(()=>expenses.reduce((s,e)=>s+e.amount,0),[expenses]);
+  // Only count active expenses (no endDate, or endDate in future)
+  const today = new Date(); today.setHours(0,0,0,0);
+  const activeExpenses  = useMemo(()=>expenses.filter(e=>{ if(!e.endDate) return true; return new Date(e.endDate) >= today; }),[expenses]);
+  const expiredExpenses = useMemo(()=>expenses.filter(e=>{ if(!e.endDate) return false; return new Date(e.endDate) < today; }),[expenses]);
+  const totalExpensePKR = useMemo(()=>activeExpenses.reduce((s,e)=>s+e.amount,0),[activeExpenses]);
   const monthlySavings  = totalIncomePKR - totalExpensePKR;
   const savingsPercent  = totalIncomePKR>0?Math.max(0,Math.min(100,(monthlySavings/totalIncomePKR)*100)):0;
   const totalSplitPct   = useMemo(()=>goals.reduce((s,g)=>s+(g.split||0),0),[goals]);
@@ -268,7 +273,7 @@ export default function App() {
     {label:"Yearly",   months:12,color:"#ffd166"},
   ];
 
-  const byExpCat = useMemo(()=>{const m={};expenses.forEach(e=>{m[e.category]=(m[e.category]||0)+e.amount;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);  },[expenses]);
+  const byExpCat = useMemo(()=>{const m={};activeExpenses.forEach(e=>{m[e.category]=(m[e.category]||0)+e.amount;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);},[activeExpenses]);
   const byIncCat = useMemo(()=>{const m={};incomes.forEach(i=>{const p=i.currency==="USD"?i.amountRaw*rate:i.amountRaw;m[i.category]=(m[i.category]||0)+p;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);},[incomes,rate]);
   const convResult = useMemo(()=>{const n=parseFloat(convInput);if(isNaN(n))return null;return convDir==="usd2pkr"?n*rate:n/rate;},[convInput,convDir,rate]);
 
@@ -309,9 +314,9 @@ export default function App() {
     const ts=Date.now();
     if(expEditId!==null){setExpenses(expenses.map(e=>e.id===expEditId?{...e,...expForm,amount:+expForm.amount,updatedAt:ts}:e));setExpEditId(null);}
     else setExpenses([...expenses,{id:ts,...expForm,amount:+expForm.amount,createdAt:ts}]);
-    setExpForm({name:"",amount:"",category:expCats[0],type:"monthly"});
+    setExpForm({name:"",amount:"",category:expCats[0],type:"monthly",endDate:""});
   };
-  const handleEditExpense  =(e)=>{setExpForm({name:e.name,amount:e.amount,category:e.category,type:e.type});setExpEditId(e.id);};
+  const handleEditExpense  =(e)=>{setExpForm({name:e.name,amount:e.amount,category:e.category,type:e.type,endDate:e.endDate||""});setExpEditId(e.id);};
   const handleDeleteExpense=(id)=>{setExpenses(expenses.filter(e=>e.id!==id));if(expEditId===id){setExpEditId(null);setExpForm({name:"",amount:"",category:expCats[0],type:"monthly"});}};
   const handleAddExpCat   =()=>{const t=newExpCatName.trim();if(!t)return;const f=`${newExpCatEmoji} ${t}`;if(!expCats.includes(f))setExpCats([...expCats,f]);setNewExpCatName("");setNewExpCatEmoji("✨");setShowExpCatModal(false);};
   const handleDeleteExpCat=(cat)=>{if(DEFAULT_EXP_CATS.includes(cat))return;setExpCats(expCats.filter(c=>c!==cat));if(expForm.category===cat)setExpForm(f=>({...f,category:expCats[0]}));};
@@ -614,6 +619,8 @@ export default function App() {
         .mig{display:flex;flex-direction:column;gap:5px;margin-bottom:11px;}
         .ml{font-size:.57rem;letter-spacing:2px;text-transform:uppercase;color:var(--muted);}
         .macts{display:flex;gap:9px;margin-top:11px;}
+        .end-badge{font-size:.56rem;color:var(--muted);display:flex;align-items:center;gap:3px;}
+        .li-warn{border-color:rgba(255,209,102,.35)!important;background:rgba(255,209,102,.03)!important;}
         .divider{border:none;border-top:1px solid var(--border);margin:22px 0 18px;}
         .empty{text-align:center;padding:32px 18px;color:var(--muted);font-size:.7rem;letter-spacing:2px;}
       `}</style>
@@ -751,24 +758,51 @@ export default function App() {
 
         {/* ════ EXPENSES ════ */}
         {activeTab===2&&<>
+          {/* Active/Expired summary strip */}
+          <div className="inc-strip" style={{background:"linear-gradient(135deg,rgba(255,107,107,.07),rgba(79,142,247,.05))",borderColor:"rgba(255,107,107,.2)"}}>
+            {[
+              {label:"Active Expenses",   value:fmtPKR(totalExpensePKR),          color:"var(--danger)"},
+              {label:"Active Count",      value:activeExpenses.length,             color:"var(--text)"},
+              {label:"Expired/Completed", value:expiredExpenses.length,            color:"var(--muted)"},
+              {label:"Freed Up",          value:fmtPKR(expiredExpenses.reduce((s,e)=>s+e.amount,0)), color:"var(--success)"},
+            ].map((s,i)=>(
+              <div key={i} className="si"><div className="sl">{s.label}</div><div className="sv" style={{color:s.color}}>{s.value}</div></div>
+            ))}
+          </div>
+
           <div className="sec"><span>{expEditId?"Edit Expense":"Add Expense"}</span></div>
-          <div className="fge">
-            <div className="fg"><div className="fl">Name</div><input placeholder="e.g. Bijli Bill, Petrol…" value={expForm.name} onChange={e=>setExpForm({...expForm,name:e.target.value})} onKeyDown={e=>e.key==="Enter"&&handleAddExpense()}/></div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1.2fr 1fr 1.1fr auto",gap:9,marginBottom:22,alignItems:"end"}}>
+            <div className="fg"><div className="fl">Name</div><input placeholder="e.g. Car Installment, Bijli…" value={expForm.name} onChange={e=>setExpForm({...expForm,name:e.target.value})} onKeyDown={e=>e.key==="Enter"&&handleAddExpense()}/></div>
             <div className="fg"><div className="fl">Amount (Rs)</div><input type="number" placeholder="0" value={expForm.amount} onChange={e=>setExpForm({...expForm,amount:e.target.value})} onKeyDown={e=>e.key==="Enter"&&handleAddExpense()}/></div>
             <div className="fg"><div className="fl">Category</div><select value={expForm.category} onChange={e=>setExpForm({...expForm,category:e.target.value})}>{expCats.map(c=><option key={c}>{c}</option>)}</select></div>
             <div className="fg"><div className="fl">Type</div><select value={expForm.type} onChange={e=>setExpForm({...expForm,type:e.target.value})}><option value="monthly">Monthly</option><option value="onetime">One-time</option></select></div>
+            <div className="fg">
+              <div className="fl">End Date <span style={{color:"var(--muted)",fontSize:".5rem"}}>(optional)</span></div>
+              <input type="month" value={expForm.endDate||""} onChange={e=>setExpForm({...expForm,endDate:e.target.value})}
+                style={{colorScheme:"dark"}}/>
+            </div>
             <div className="fg" style={{flexDirection:"row",alignItems:"flex-end",gap:6}}>
               <button className="btn btn-p" onClick={handleAddExpense}>{expEditId?"Update":"Add"}</button>
-              {expEditId&&<button className="btn btn-g" onClick={()=>{setExpEditId(null);setExpForm({name:"",amount:"",category:expCats[0],type:"monthly"});}}>✕</button>}
+              {expEditId&&<button className="btn btn-g" onClick={()=>{setExpEditId(null);setExpForm({name:"",amount:"",category:expCats[0],type:"monthly",endDate:""});}}>✕</button>}
             </div>
           </div>
+
           <div className="sec" style={{marginBottom:8}}><span>Expense Categories</span><button className="btn btn-o" style={{fontSize:".6rem",padding:"5px 11px"}} onClick={()=>setShowExpCatModal(true)}>+ New</button></div>
           <div className="chips">{expCats.map(cat=><div key={cat} className={`chip ${DEFAULT_EXP_CATS.includes(cat)?"":"cst"}`}><span>{cat}</span>{!DEFAULT_EXP_CATS.includes(cat)&&<button className="chip-x" onClick={()=>handleDeleteExpCat(cat)}>✕</button>}</div>)}</div>
-          <div className="sec"><span>Expense Entries — {expenses.length}</span></div>
+
+          {/* Active expenses */}
+          <div className="sec"><span>Active Expenses — {activeExpenses.length}</span></div>
           <div className="list">
-            {expenses.length===0&&<div className="empty">No expenses yet</div>}
-            {[...expenses].reverse().map(e=>(
-              <div key={e.id} className="li">
+            {activeExpenses.length===0&&<div className="empty">No active expenses</div>}
+            {[...activeExpenses].reverse().map(e=>{
+              const hasEnd = !!e.endDate;
+              const endD   = hasEnd ? new Date(e.endDate) : null;
+              const nowD   = new Date(); nowD.setHours(0,0,0,0);
+              const msLeft = endD ? endD - nowD : null;
+              const daysLeft = msLeft ? Math.ceil(msLeft/86400000) : null;
+              const endingSoon = daysLeft !== null && daysLeft <= 60;
+              return(
+              <div key={e.id} className={`li ${endingSoon?"li-warn":""}`}>
                 <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap",flex:1,minWidth:0}}>
                   <span style={{fontSize:"1.05rem",flexShrink:0}}>{e.category.split(" ")[0]}</span>
                   <div style={{minWidth:0}}>
@@ -776,6 +810,10 @@ export default function App() {
                     <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                       <div className="icat">{e.category}</div>
                       <div className="ts-badge" title={fmtTimeFull(e.createdAt)}>{fmtTime(e.updatedAt||e.createdAt)}{e.updatedAt&&" (edited)"}</div>
+                      {hasEnd&&<div className="end-badge" style={{color:endingSoon?"var(--accent3)":"var(--muted)"}}>
+                        📅 ends {endD.toLocaleDateString("en-PK",{month:"short",year:"numeric"})}
+                        {endingSoon&&<span style={{color:"var(--accent3)",fontWeight:600}}> · {daysLeft}d left</span>}
+                      </div>}
                     </div>
                   </div>
                   <span className={`badge ${e.type==="monthly"?"bm":"bo"}`}>{e.type}</span>
@@ -785,9 +823,38 @@ export default function App() {
                   <button className="bsm" onClick={()=>handleEditExpense(e)}>edit</button>
                   <button className="bsm d" onClick={()=>handleDeleteExpense(e.id)}>✕</button>
                 </div>
-              </div>
-            ))}
+              </div>);
+            })}
           </div>
+
+          {/* Expired / completed expenses */}
+          {expiredExpenses.length>0&&<>
+            <div className="sec" style={{marginBottom:8}}>
+              <span style={{color:"var(--muted)"}}>Expired / Completed — {expiredExpenses.length}</span>
+              <span style={{fontSize:".6rem",color:"var(--success)"}}>+{fmtPKR(expiredExpenses.reduce((s,e)=>s+e.amount,0))}/mo freed</span>
+            </div>
+            <div className="list">
+              {[...expiredExpenses].reverse().map(e=>(
+                <div key={e.id} className="li" style={{opacity:.5,borderStyle:"dashed"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap",flex:1,minWidth:0}}>
+                    <span style={{fontSize:"1.05rem",flexShrink:0,filter:"grayscale(1)"}}>{e.category.split(" ")[0]}</span>
+                    <div style={{minWidth:0}}>
+                      <div className="iname" style={{textDecoration:"line-through",color:"var(--muted)"}}>{e.name}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <div className="icat">{e.category}</div>
+                        <div className="end-badge">✓ ended {new Date(e.endDate).toLocaleDateString("en-PK",{month:"short",year:"numeric"})}</div>
+                      </div>
+                    </div>
+                    <span className="badge" style={{background:"rgba(61,90,128,.2)",color:"var(--muted)",border:"none"}}>expired</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                    <div className="iamt" style={{color:"var(--muted)",textDecoration:"line-through"}}>{fmtPKR(e.amount)}</div>
+                    <button className="bsm d" onClick={()=>handleDeleteExpense(e.id)}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>}
         </>}
 
         {/* ════ GOALS ════ */}

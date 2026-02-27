@@ -72,15 +72,19 @@ function timeAgo(ts) {
 }
 
 function isExpenseActive(exp) {
-  if (!exp.endMonth || !exp.endYear) return true;
+  const em = Number(exp.endMonth);
+  const ey = Number(exp.endYear);
+  if (!em || !ey) return true;
   const now = new Date();
-  const endDate = new Date(exp.endYear, exp.endMonth - 1, 28); // end of that month approx
+  const endDate = new Date(ey, em - 1, 28);
   return now <= endDate;
 }
 
 function daysUntilEnd(exp) {
-  if (!exp.endMonth || !exp.endYear) return Infinity;
-  const end = new Date(exp.endYear, exp.endMonth - 1, 28);
+  const em = Number(exp.endMonth);
+  const ey = Number(exp.endYear);
+  if (!em || !ey) return Infinity;
+  const end = new Date(ey, em - 1, 28);
   return Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
 }
 
@@ -273,11 +277,13 @@ function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsR
       // For this future month, which monthly expenses are still active?
       const monthExpenses = expenses.filter(e => {
         if (e.type !== "monthly") return false;
+        const eEndMonth = Number(e.endMonth);
+        const eEndYear = Number(e.endYear);
         // No end date = always active
-        if (!e.endMonth || !e.endYear) return true;
+        if (!eEndMonth || !eEndYear) return true;
         // End date check: expense is active if projMonth/projYear <= endMonth/endYear
-        if (projY < e.endYear) return true;
-        if (projY === e.endYear && projM <= e.endMonth) return true;
+        if (projY < eEndYear) return true;
+        if (projY === eEndYear && projM <= eEndMonth) return true;
         return false;
       });
       const monthTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
@@ -303,11 +309,13 @@ function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsR
   // Helper: is expense active during a specific calendar month?
   const isActiveInMonth = (e, m, y) => {
     // m is 0-indexed (JS month), y is full year
-    if (!e.endMonth || !e.endYear) return true; // no end date = always active
-    // e.endMonth is 1-indexed, convert calendar month to 1-indexed for comparison
+    const eEndMonth = Number(e.endMonth);
+    const eEndYear = Number(e.endYear);
+    if (!eEndMonth || !eEndYear) return true; // no end date = always active
+    // convert calendar month to 1-indexed for comparison
     const calM1 = m + 1;
-    if (y < e.endYear) return true;
-    if (y === e.endYear && calM1 <= e.endMonth) return true;
+    if (y < eEndYear) return true;
+    if (y === eEndYear && calM1 <= eEndMonth) return true;
     return false; // calendar month is after end date
   };
 
@@ -775,9 +783,11 @@ function GoalsTab({ goals, setGoals, monthlySaving, expenses, totalIncomePKR }) 
     const projY = projDate.getFullYear();
     const monthExpenses = (expenses || []).filter(e => {
       if (e.type !== "monthly") return false;
-      if (!e.endMonth || !e.endYear) return true;
-      if (projY < e.endYear) return true;
-      if (projY === e.endYear && projM <= e.endMonth) return true;
+      const eEndMonth = Number(e.endMonth);
+      const eEndYear = Number(e.endYear);
+      if (!eEndMonth || !eEndYear) return true;
+      if (projY < eEndYear) return true;
+      if (projY === eEndYear && projM <= eEndMonth) return true;
       return false;
     });
     const monthTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);

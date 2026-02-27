@@ -299,8 +299,20 @@ function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsR
   // Calendar data
   const calDays = new Date(calYear, calMonth + 1, 0).getDate();
   const firstDay = new Date(calYear, calMonth, 1).getDay();
-  const calExpenses = activeExpenses.filter(e => {
-    if (e.type === "monthly") return true;
+  
+  // Helper: is expense active during a specific calendar month?
+  const isActiveInMonth = (e, m, y) => {
+    // m is 0-indexed (JS month), y is full year
+    if (!e.endMonth || !e.endYear) return true; // no end date = always active
+    // e.endMonth is 1-indexed, convert calendar month to 1-indexed for comparison
+    const calM1 = m + 1;
+    if (y < e.endYear) return true;
+    if (y === e.endYear && calM1 <= e.endMonth) return true;
+    return false; // calendar month is after end date
+  };
+
+  const calExpenses = expenses.filter(e => {
+    if (e.type === "monthly") return isActiveInMonth(e, calMonth, calYear);
     if (e.type === "onetime" && e.timestamp) {
       const d = new Date(e.timestamp);
       return d.getMonth() === calMonth && d.getFullYear() === calYear;
@@ -315,8 +327,8 @@ function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsR
     return true; // recurring incomes always show
   });
 
-  const calMonthExpenseTotal = activeExpenses.reduce((s, e) => {
-    if (e.type === "monthly") return s + e.amount;
+  const calMonthExpenseTotal = expenses.reduce((s, e) => {
+    if (e.type === "monthly" && isActiveInMonth(e, calMonth, calYear)) return s + e.amount;
     if (e.type === "onetime" && e.timestamp) {
       const d = new Date(e.timestamp);
       if (d.getMonth() === calMonth && d.getFullYear() === calYear) return s + e.amount;
@@ -399,7 +411,7 @@ function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsR
             const day = i + 1;
             const isToday = day === new Date().getDate() && calMonth === new Date().getMonth() && calYear === new Date().getFullYear();
             // Check for one-time expenses on this day
-            const dayExpenses = activeExpenses.filter(e => {
+            const dayExpenses = calExpenses.filter(e => {
               if (e.type === "onetime" && e.timestamp) {
                 const d = new Date(e.timestamp);
                 return d.getDate() === day && d.getMonth() === calMonth && d.getFullYear() === calYear;

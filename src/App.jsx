@@ -247,10 +247,10 @@ export default function App() {
 
       {/* Content */}
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 16px" }}>
-        {tab === "dashboard" && <DashboardTab {...{ totalIncomePKR, totalExpensePKR, monthlySaving, savingsRate, freedUpAmount, incomes, activeExpenses, expiredExpenses, allExpCats, allIncCats, rate, calMonth, calYear, setCalMonth, setCalYear }} />}
+        {tab === "dashboard" && <DashboardTab {...{ totalIncomePKR, totalExpensePKR, monthlySaving, savingsRate, freedUpAmount, incomes, expenses, activeExpenses, expiredExpenses, allExpCats, allIncCats, rate, calMonth, calYear, setCalMonth, setCalYear }} />}
         {tab === "income" && <IncomeTab {...{ incomes, setIncomes, allIncCats, customIncCats, setCustomIncCats, rate }} />}
         {tab === "expenses" && <ExpenseTab {...{ expenses, setExpenses, activeExpenses, expiredExpenses, allExpCats, customExpCats, setCustomExpCats }} />}
-        {tab === "goals" && <GoalsTab {...{ goals, setGoals, monthlySaving }} />}
+        {tab === "goals" && <GoalsTab {...{ goals, setGoals, monthlySaving, expenses, totalIncomePKR }} />}
         {tab === "converter" && <ConverterTab rate={rate} />}
       </main>
     </div>
@@ -260,7 +260,36 @@ export default function App() {
 // ═══════════════════════════════════════════════
 // DASHBOARD TAB
 // ═══════════════════════════════════════════════
-function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsRate, freedUpAmount, incomes, activeExpenses, expiredExpenses, allExpCats, allIncCats, rate, calMonth, calYear, setCalMonth, setCalYear }) {
+function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsRate, freedUpAmount, incomes, expenses, activeExpenses, expiredExpenses, allExpCats, allIncCats, rate, calMonth, calYear, setCalMonth, setCalYear }) {
+  // Smart projection: month-by-month calculation considering end dates
+  function calcSmartProjection(numMonths) {
+    let totalSaved = 0;
+    const now = new Date();
+    for (let i = 1; i <= numMonths; i++) {
+      const projMonth = now.getMonth() + i;
+      const projDate = new Date(now.getFullYear(), projMonth, 1);
+      const projM = projDate.getMonth() + 1; // 1-indexed
+      const projY = projDate.getFullYear();
+      // For this future month, which monthly expenses are still active?
+      const monthExpenses = expenses.filter(e => {
+        if (e.type !== "monthly") return false;
+        // No end date = always active
+        if (!e.endMonth || !e.endYear) return true;
+        // End date check: expense is active if projMonth/projYear <= endMonth/endYear
+        if (projY < e.endYear) return true;
+        if (projY === e.endYear && projM <= e.endMonth) return true;
+        return false;
+      });
+      const monthTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
+      totalSaved += (totalIncomePKR - monthTotal);
+    }
+    return totalSaved;
+  }
+
+  const projection3 = calcSmartProjection(3);
+  const projection6 = calcSmartProjection(6);
+  const projection12 = calcSmartProjection(12);
+
   // Category breakdowns
   const expByCat = {};
   activeExpenses.filter(e => e.type === "monthly").forEach(e => { expByCat[e.category] = (expByCat[e.category] || 0) + e.amount; });
@@ -320,9 +349,9 @@ function DashboardTab({ totalIncomePKR, totalExpensePKR, monthlySaving, savingsR
 
       {/* Projections */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 28 }}>
-        <ProjectionCard label="Quarterly" months={3} saving={monthlySaving} color={theme.green} />
-        <ProjectionCard label="Half Year" months={6} saving={monthlySaving} color={theme.blue} />
-        <ProjectionCard label="Yearly" months={12} saving={monthlySaving} color={theme.yellow} />
+        <SmartProjectionCard label="Quarterly" months={3} total={projection3} color={theme.green} monthlySaving={monthlySaving} />
+        <SmartProjectionCard label="Half Year" months={6} total={projection6} color={theme.blue} monthlySaving={monthlySaving} />
+        <SmartProjectionCard label="Yearly" months={12} total={projection12} color={theme.yellow} monthlySaving={monthlySaving} />
       </div>
 
       {/* Category Breakdowns - side by side */}
@@ -451,11 +480,16 @@ function SummaryCard({ label, value, color, icon, sub }) {
   );
 }
 
-function ProjectionCard({ label, months, saving, color }) {
+function SmartProjectionCard({ label, months, total, color, monthlySaving }) {
+  const naive = monthlySaving * months;
+  const bonus = total - naive;
   return (
     <div className="card-hover" style={{ background: theme.card, borderRadius: 12, padding: "16px 20px", border: `1px solid ${theme.border}`, transition: "all 0.25s" }}>
       <div style={{ fontSize: 12, color: theme.textDim, fontWeight: 500, marginBottom: 6 }}>{label} ({months}mo)</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(saving * months)}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(total)}</div>
+      {bonus > 0 && (
+        <div style={{ fontSize: 11, color: theme.green, marginTop: 4 }}>+{fmt(bonus)} from ending installments</div>
+      )}
     </div>
   );
 }
@@ -701,7 +735,7 @@ function ExpenseTab({ expenses, setExpenses, activeExpenses, expiredExpenses, al
 // ═══════════════════════════════════════════════
 // GOALS TAB
 // ═══════════════════════════════════════════════
-function GoalsTab({ goals, setGoals, monthlySaving }) {
+function GoalsTab({ goals, setGoals, monthlySaving, expenses, totalIncomePKR }) {
   const [mode, setMode] = useState("priority"); // priority | split
   const [showModal, setShowModal] = useState(false);
   const [editGoal, setEditGoal] = useState(null);
@@ -721,31 +755,64 @@ function GoalsTab({ goals, setGoals, monthlySaving }) {
 
   const totalSplit = goals.reduce((s, g) => s + (g.splitPct || 0), 0);
 
-  // Priority mode calculations
-  const priorityCalc = () => {
-    if (monthlySaving <= 0) return goals.map(g => ({ ...g, startMonth: 0, monthsNeeded: Infinity, achieveDate: null }));
-    let cumMonths = 0;
-    return goals.map(g => {
-      const remaining = Math.max(0, g.target - (g.saved || 0));
-      const months = Math.ceil(remaining / monthlySaving);
-      const startMonth = cumMonths;
-      const achieveDate = new Date();
-      achieveDate.setMonth(achieveDate.getMonth() + cumMonths + months);
-      cumMonths += months;
-      return { ...g, startMonth, monthsNeeded: months, achieveDate };
+  // Helper: get monthly saving for a specific future month offset
+  const getSavingForMonth = (offset) => {
+    const now = new Date();
+    const projDate = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const projM = projDate.getMonth() + 1;
+    const projY = projDate.getFullYear();
+    const monthExpenses = (expenses || []).filter(e => {
+      if (e.type !== "monthly") return false;
+      if (!e.endMonth || !e.endYear) return true;
+      if (projY < e.endYear) return true;
+      if (projY === e.endYear && projM <= e.endMonth) return true;
+      return false;
     });
+    const monthTotal = monthExpenses.reduce((s, e) => s + e.amount, 0);
+    return (totalIncomePKR || 0) - monthTotal;
   };
 
-  // Split mode calculations
+  // Priority mode: sequential goals, month-by-month
+  const priorityCalc = () => {
+    const results = [];
+    let monthOffset = 1;
+    let accumulated = 0;
+    for (let gi = 0; gi < goals.length; gi++) {
+      const g = goals[gi];
+      const remaining = Math.max(0, g.target - (g.saved || 0));
+      const startMonth = monthOffset - 1;
+      let funded = 0;
+      let months = 0;
+      // walk forward month by month until this goal is funded
+      while (funded < remaining && months < 600) {
+        const savThisMonth = getSavingForMonth(monthOffset);
+        funded += Math.max(0, savThisMonth);
+        monthOffset++;
+        months++;
+      }
+      const achieveDate = new Date();
+      achieveDate.setMonth(achieveDate.getMonth() + startMonth + months);
+      results.push({ ...g, startMonth, monthsNeeded: months, achieveDate });
+    }
+    return results;
+  };
+
+  // Split mode: each goal gets a % of each month's saving
   const splitCalc = () => {
     return goals.map(g => {
       const pct = g.splitPct || 0;
-      const monthlyAlloc = monthlySaving * (pct / 100);
       const remaining = Math.max(0, g.target - (g.saved || 0));
-      const months = monthlyAlloc > 0 ? Math.ceil(remaining / monthlyAlloc) : Infinity;
+      let funded = 0;
+      let months = 0;
+      while (funded < remaining && months < 600) {
+        months++;
+        const savThisMonth = getSavingForMonth(months);
+        funded += Math.max(0, savThisMonth) * (pct / 100);
+      }
+      const monthlyAlloc = monthlySaving * (pct / 100);
       const achieveDate = new Date();
-      achieveDate.setMonth(achieveDate.getMonth() + (months === Infinity ? 0 : months));
-      return { ...g, monthlyAlloc, monthsNeeded: months, achieveDate: months === Infinity ? null : achieveDate };
+      achieveDate.setMonth(achieveDate.getMonth() + months);
+      return { ...g, monthlyAlloc, monthsNeeded: pct > 0 ? months : Infinity, achieveDate: pct > 0 ? achieveDate : null };
     });
   };
 
